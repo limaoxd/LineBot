@@ -1,15 +1,13 @@
+from asyncore import read
 import os, random
-from sre_parse import State
-import sys
 import configparser
 import json
-import pathlib
 import pyimgur
+from setuptools import Command
+import pic
 
-from cgitb import handler
-from distutils.command.config import config
-from dataclasses import dataclass
-from PIL import ImageTk, Image
+from pic import add_enemy, add_player, profession, generate
+from PIL import Image
 from flask import Flask, jsonify, request, abort, send_file
 from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookParser
@@ -43,90 +41,188 @@ machine = TocMachine(
     show_conditions=True,
 )
 
-@dataclass
-class Career:
-    ID      : str
-    idle    : Image.Image
-    atk     : Image.Image
-    assist  : Image.Image
-    miss    : Image.Image
-    MaxHp   : int
-    Hp      : int
-    damage  : int
-    defence : int
-    Maxmind : int
-    mind    : int
-    insane  : bool
-
 app = Flask(__name__, static_url_path="")
 
 #================================================================================================================
-var = configparser.ConfigParser()
-var.read('config.ini')
-
-secret = var['var']['Secret']
-token = var['var']['Token']
-
+var             = pic.var
+enemy_var       = pic.enemy_var
+secret          = var['var']['Secret']
+token           = var['var']['Token']
 imgur_id        = var['imgur']['id']
 
-line_bot_api = LineBotApi(token)
-parser = WebhookParser(secret)
+line_bot_api    = LineBotApi(token)
+parser          = WebhookParser(secret)
 
-state  = 0
-team   = []
-player = []
-profession  = ['alchemist', 'archer', 'bounty', 'hunter', 'jester', 'knight', 'tank', 'vestal']
-
-background  = Image.open(var['scene']['crypts'] + '/' + random.choice(os.listdir(var['scene']['crypts'])))
+state           = 0
+acted           = 0
+ready           = 0
+env             = pic.env
+scene_name      = pic.scene_name
+background      = pic.background
+team            = []
+raid            = []
+command         = [[],[],[],[]]
+player          = pic.player
+enemy           = pic.add_enemy
+profession      = pic.profession
+skillArr        = pic.skillArr
+crypt_raid      = pic.crypt_raid
+cove_raid       = pic.cove_raid
+warrens_raid    = pic.warrens_raid
+weald_raid      = pic.weald_raid
 #================================================================================================================
+def upload():
+    background = Image.open(var['scene'][env] + '/' + scene_name)
+    generate()
+    background.save('./img/bg.png')
 
-def add_player(id, carrer_num):
-    global player, team, profession, state, background, var
+    im      = pyimgur.Imgur(imgur_id)
+    upload  = im.upload_image('./img/bg.png', title = "img") 
+    url     = upload.link
+
+    line_bot_api.reply_message(
+        replyToken,
+        ImageSendMessage(original_content_url = url, preview_image_url = url)
+    )
+def createRaid():
+    raid = cove_raid[random.randint(0, 12)]
+    for it in raid:
+        f = False
+        dmg = int(enemy_var['damage'][it])
+        hp  = int(enemy_var['health'][it])
+        if(enemy_var['assist'][it] == '1'): f = True
+
+        add_enemy(it, f, hp, dmg, 0)
+    upload()
+def battle():
+    global player, team, profession, state, background, var, ready
+    ready = 0
+    ind = 0
+
+    for it in player:
+        mult = False
+        try:
+            command[ind][1] = int(command[ind][1])
+        except:
+            mult = True
+        skill = it.skills[i]
+        if(skill.attribute > 0): it.move = 'atk'
+        else: it.move = 'assist'
+                        
+        if(mult != True and skill.Range[command[ind][1]] == '1' and command[ind][1] > 3):                            
+            try:
+                aim = enemy[command[ind][1] - 4]
+            except:
+                break
+            hit = False
+            critical = False
+
+            if(random.randint(0, 100) < skill.accurancy): hit = True
+            if(random.randint(0, 100) < skill.critical): critical = True
+                        
+            if(critical):
+                aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2) * 2)
+                line_bot_api.reply_message(
+                    replyToken,
+                    TextSendMessage(text = 'Critical atk! '+ it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
+                )
+            elif(hit):    #atk hitted
+                aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2))
+                line_bot_api.reply_message(
+                    replyToken,
+                    TextSendMessage(text = it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
+                )
+            else:       #atk miss
+                aim.move = 'miss'
+                line_bot_api.reply_message(
+                    replyToken,
+                    TextSendMessage(text = aim.name + 'avoid attack')
+                )
+        elif(mult and skill.num > 1):
+            timer = 0
+            for i in range(len(enemy)):
+                if(skill.Range[i + 4] != '1'): continue
+                if(timer == skill.num): break
+                    
+                timer += 1
+                aim = enemy[i]
+                hit = False
+                critical = False
+
+                if(random.randint(0, 100) < skill.accurancy): hit = True
+                if(random.randint(0, 100) < skill.critical): critical = True
+
+                if(critical):
+                    aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2) * 2)
+                    line_bot_api.reply_message(
+                        replyToken,
+                        TextSendMessage(text = 'Critical atk! '+ it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
+                    )
+                elif(hit):    #atk hitted
+                    aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2))
+                    line_bot_api.reply_message(
+                        replyToken,
+                        TextSendMessage(text = it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
+                    )
+                else:       #atk miss
+                    aim.move = 'miss'
+                    line_bot_api.reply_message(
+                        replyToken,
+                        TextSendMessage(text = aim.name + 'avoid attack')
+                    )
+        ind += 1
     
-    idle    = Image.open(var['character'][profession[carrer_num]] + 'A' + '.png')
-    atk     = Image.open(var['character'][profession[carrer_num]] + 'A_atk' + '.png')
-    assist  = Image.open(var['character'][profession[carrer_num]] + 'A_assist' + '.png')
-    miss    = Image.open(var['character'][profession[carrer_num]] + 'A_miss' + '.png')
-
-    img     = idle.resize((idle.width // 2, idle.height // 2))
-    img1    = atk.resize((atk.width // 2, atk.height // 2))
-    img2    = assist.resize((assist.width // 2, assist.height // 2))
-    img3    = miss.resize((miss.width // 2, miss.height // 2))
-    idle    = img
-    atk     = img1
-    assist  = img2
-    miss    = img3
+    upload()
     
-    MaxHp   = var['health'][profession[carrer_num]]
-    Hp      = MaxHp
-    damage  = var['damage'][profession[carrer_num]]
-    defence = var['defence'][profession[carrer_num]]
-    Maxmind = var['mind'][profession[carrer_num]]
-    mind    = 0
+    for it in player:
+        it.move = 'idle'
+    for i in range(len(enemy)):
+        for itt in player:
+            if(itt.Hp <= 0): player.remove(it)
+        hit = False
+        critical = False
+        assist   = False
 
-    player.append(Career(id, idle, atk, assist, miss, MaxHp, Hp, damage, defence, Maxmind, mind, False))
+        try: aim = player[0]
+        except: break
 
-def gen_player():
-    global player, team, profession, state, background, var
+        if(random.randint(0, 100) < 90): hit = True
+        if(random.randint(0, 100) < 5): critical = True
+        if(random.randint(0, 100) < 40): assist = True
+        if(enemy[i].exmove == False):                
+            aim = player[random.randint(0,min(len(player) - 1, 1))]
+            enemy[i].move = 'atk'
+        elif(enemy[i].exmove == True and assist):    
+            aim = player[random.randint(0,len(player) -1)]
+            enemy[i].move = 'assist'
+            
+        if(critical):
+            aim.Hp -= int (float(enemy[i].damage) * random.uniform(0.8, 1.2) * 2)
+            #print('Critical atk! '+ aim.ID + ' remain: ' + str(aim.Hp))
+            line_bot_api.reply_message(
+                replyToken,
+                TextSendMessage(text = 'Critical atk! '+ aim.ID + ' remain: ' + str(aim.Hp))
+            )
+        elif(hit):
+            aim.Hp -= int (float(enemy[i].damage) * random.uniform(0.8, 1.2))
+            #print(aim.ID + ' remain: ' + str(aim.Hp))
+            line_bot_api.reply_message(
+                replyToken,
+                TextSendMessage(text = aim.ID + ' remain: ' + str(aim.Hp))
+            )
+        else:
+            aim.move = 'miss'
+            line_bot_api.reply_message(
+                replyToken,
+                TextSendMessage(text = aim.name + 'avoid attack')
+            )
     
-    for i in range(len(player)):
-        bar         = Image.open(var['ui']['bar'])
-        health_pip  = Image.open(var['ui']['health_pip'])
-        img         = player[len(player) - i - 1].idle
-        bar        = bar.resize((bar.width, int(bar.height * 2)))
-        img1        = health_pip.resize((int(health_pip.width * 16.875), int(health_pip.height * 2)))
-        
-        offset      = [img.width // 2, img.height]
-
-        img1.paste(bar, (0, 0), bar)
-        
-        background.paste(img, ( 700 - 150 * (len(player) - i - 1) - offset[0], 675 - offset[1]), img)
-        background.paste(img1, ( 650 - 160 * (len(player) - i - 1) , 670), img1)
+    upload()
 
 #recieve and transfer
 @app.route("/callback", methods=["POST"])
 def callback():
-    global player, team, profession, state, background, var
+    global player, team, profession, state, background, var, ready
     signature = request.headers["X-Line-Signature"]
     # get request body as text
     body = request.get_data(as_text=True)
@@ -140,6 +236,8 @@ def callback():
 
     # if event is MessageEvent and message is TextMessage, then echo text
     for event in events:
+        global replyToken
+        replyToken = event.reply_token
         if not isinstance(event, MessageEvent):
             continue
         if not isinstance(event.message, TextMessage):
@@ -150,9 +248,6 @@ def callback():
             if(it == id): signed = True
         words = event.message.text.split(" ")
 
-        #sendmessage to user inperson
-        #line_bot_api.push_message(id, TextSendMessage(text = id))
-
         if state == 0: #create charcter
             if (words[0] == '清除' or words[0] == 'clear'):
                 team    = []
@@ -162,7 +257,7 @@ def callback():
                     event.reply_token,
                     TextSendMessage(text = '隊伍清除')
                 )
-            if (words[0] == '創建職業' and words[1] and signed == False):
+            elif (words[0] == '創建職業' and words[1] and signed == False):
                 add_player(id, int(words[1]))
                 team.append(id)
 
@@ -170,7 +265,9 @@ def callback():
                 Career_msg += '體力上限 : ' + str(player[len(player) - 1].MaxHp) + '\n'
                 Career_msg += '攻擊傷害 : ' + str(player[len(player) - 1].damage) + '\n'
                 Career_msg += '防禦值 : '   + str(player[len(player) - 1].defence) + '\n'
-                Career_msg += '理智值 : '   + str(player[len(player) - 1].Maxmind)
+                Career_msg += '技能:\n'
+                for it in player[len(player) - 1].skills:
+                    Career_msg += it.name + ' 威力' + str(it.power) + ' 命中' + str(it.accurancy) + ' 要害率' + str(it.critical) + '\n'
 
                 line_bot_api.push_message(id, TextSendMessage(text = str(Career_msg)))
                 
@@ -178,18 +275,39 @@ def callback():
                     event.reply_token,
                     TextSendMessage(text = '創建職業 : ' + profession[int(words[1])])
                 )
-            if(words[0] == 'check'):
-                gen_player()
-                background.save('bg.png')
+            elif(words[0] == 'check'):
+                generate()
+                background.save('./img/bg.png')
 
                 im      = pyimgur.Imgur(imgur_id)
-                upload  = im.upload_image('bg.png', title = "img") 
+                upload  = im.upload_image('./img/bg.png', title = "img") 
                 url     = upload.link
-
+                
                 line_bot_api.reply_message(
                     event.reply_token,
                     ImageSendMessage(original_content_url = url, preview_image_url = url)
                 )
+            elif(words[0] == '環境選擇' and words[1]):
+                state = 1
+                env   = words[1]
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text = '環境已選擇 '+ env)
+                )
+            elif(words[0] == 'start'):
+                state = 1
+                createRaid()
+        else:
+            ind = 0
+            for i in range(len(player)):
+                if(player[i].ID == id): ind = i
+            for i in range(0, 4):
+                if(player[ind].skills[i].name == words[0]):
+                    command[ind] = words
+                    ready += 1
+                    break
+            if(ready == len(team)):
+                battle()
     return "OK"
 
 @app.route("/webhook", methods=["POST"])
