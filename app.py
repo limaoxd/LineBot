@@ -20,21 +20,27 @@ from utils import send_text_message
 load_dotenv()
 
 machine = TocMachine(
-    states=["user", "state1", "state2"],
+    states=["user", "create_team", "battle", "dead"],
     transitions=[
         {
-            "trigger": "advance",
+            "trigger": "input",
             "source": "user",
-            "dest": "state1",
-            "conditions": "is_going_to_state1",
+            "dest": "create_team",
+            "conditions": "創建腳色 編號",
         },
         {
-            "trigger": "advance",
-            "source": "user",
-            "dest": "state2",
-            "conditions": "is_going_to_state2",
+            "trigger": "input",
+            "source": "create_team",
+            "dest": "battle",
+            "conditions": "start",
         },
-        {"trigger": "go_back", "source": ["state1", "state2"], "dest": "user"},
+        {
+            "trigger": "dead in battle",
+            "source": "battle",
+            "dest": "dead",
+            "conditions": "All teammember HP is zero",
+        },
+        {"trigger": "go_back", "source": ["battle"], "dest": "user"},
     ],
     initial="user",
     auto_transitions=False,
@@ -339,7 +345,7 @@ def webhook_handler():
 
     return "OK"
 
-@app.route("/show-fsm", methods=["GET"])
+@app.route("/show-fsm", methods=["POST"])
 def show_fsm():
     machine.get_graph().draw("fsm.png", prog="dot", format="png")
     return send_file("fsm.png", mimetype="image/png")

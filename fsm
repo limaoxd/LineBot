@@ -1,0 +1,13 @@
+digraph "State Machine" {
+	graph [color=black directed=true fillcolor=white label="State Machine" rankdir=LR "strict"=false style=solid]
+	node [color=black fillcolor=white peripheries=1 shape=rectangle style="rounded, filled"]
+	edge [color=black]
+	user [label="user\l" color=red fillcolor=darksalmon peripheries=2]
+	create_team [label="create_team\l"]
+	battle [label="battle\l"]
+	dead [label="dead\l"]
+	user -> create_team [label="input [創建腳色 編號]"]
+	create_team -> battle [label="input [start]"]
+	battle -> dead [label="dead in battle [All teammember HP is zero]"]
+	battle -> user [label=go_back]
+}
