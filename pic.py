@@ -135,6 +135,7 @@ weald_raid = [
 ]
 #================================================================================================================
 def add_player(id, carrer_num):
+    global player
     idle    = Image.open(var['character'][profession[carrer_num]] + 'A' + '.png')
     atk     = Image.open(var['character'][profession[carrer_num]] + 'A_atk' + '.png')
     assist  = Image.open(var['character'][profession[carrer_num]] + 'A_assist' + '.png')
@@ -169,6 +170,7 @@ def add_player(id, carrer_num):
     player.append(Career(id, 'idle', idle, atk, assist, miss, MaxHp, Hp, damage, defence, Maxmind, mind, False, skills, 1, 1))
 
 def add_enemy(name, f, MaxHp, damage, defence):
+    global enemy
     idle    = Image.open('./sprite/monsters/' + name + '/' + name +'.png')
     atk     = Image.open('./sprite/monsters/' + name + '/' + name +'_atk.png')
     miss    = Image.open('./sprite/monsters/' + name + '/' + name +'_miss.png')
@@ -189,7 +191,7 @@ def add_enemy(name, f, MaxHp, damage, defence):
     else:
         enemy.append(Enemy(name, 'idle', idle, atk, atk, miss, MaxHp, Hp, damage, defence, False, skills))
 
-def generate():
+def generate(background):
     for it in player:
         if(it.Hp <= 0): player.remove(it)
     for i in range(len(player)):
@@ -234,12 +236,4 @@ def generate():
 
         background.paste(img, ( 1200 + 150 * (len(enemy) - i - 1) - offset[0], 675 - offset[1]), img)
         background.paste(bar, ( 1130 + 160 * (len(enemy) - i - 1) , 670), bar)
-
-#add_player('alchemist', 0)
-#add_player('archer', 1)
-#add_player('bounty', 2)
-#add_player('hunter', 3)
-#add_player('jester', 4)
-#add_player('knight', 5)
-#add_player('tank', 6)
-#add_player('vestal', 7)
+    background.save('./img/bg.png')

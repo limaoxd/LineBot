@@ -2,11 +2,12 @@ from asyncore import read
 import os, random
 import configparser
 import json
+from tkinter import E
 import pyimgur
 from setuptools import Command
 import pic
 
-from pic import add_enemy, add_player, profession, generate
+from pic import add_enemy, add_player, profession, generate, background, scene_name, env, player, enemy
 from PIL import Image
 from flask import Flask, jsonify, request, abort, send_file
 from dotenv import load_dotenv
@@ -60,17 +61,10 @@ line_bot_api    = LineBotApi(token)
 parser          = WebhookParser(secret)
 
 state           = 0
-acted           = 0
-ready           = 0
-env             = pic.env
-scene_name      = pic.scene_name
-background      = pic.background
+Round           = 0
 team            = []
 raid            = []
 command         = [[],[],[],[]]
-player          = pic.player
-enemy           = pic.add_enemy
-profession      = pic.profession
 skillArr        = pic.skillArr
 crypt_raid      = pic.crypt_raid
 cove_raid       = pic.cove_raid
@@ -78,10 +72,6 @@ warrens_raid    = pic.warrens_raid
 weald_raid      = pic.weald_raid
 #================================================================================================================
 def upload():
-    background = Image.open(var['scene'][env] + '/' + scene_name)
-    generate()
-    background.save('./img/bg.png')
-
     im      = pyimgur.Imgur(imgur_id)
     upload  = im.upload_image('./img/bg.png', title = "img") 
     url     = upload.link
@@ -91,7 +81,12 @@ def upload():
         ImageSendMessage(original_content_url = url, preview_image_url = url)
     )
 def createRaid():
-    raid = cove_raid[random.randint(0, 12)]
+    global raid
+    if(env == 'cove'):      raid = cove_raid[random.randint(0, 12)]
+    elif(env == 'crypts'):  raid = crypt_raid[random.randint(0, 12)]
+    elif(env == 'warrens'): raid = warrens_raid[random.randint(0, 12)]
+    else:                   raid = weald_raid[random.randint(0, 12)]
+
     for it in raid:
         f = False
         dmg = int(enemy_var['damage'][it])
@@ -99,19 +94,20 @@ def createRaid():
         if(enemy_var['assist'][it] == '1'): f = True
 
         add_enemy(it, f, hp, dmg, 0)
-    upload()
-def battle():
-    global player, team, profession, state, background, var, ready
-    ready = 0
-    ind = 0
 
+def battlePlayerTurn():
+    global player, enemy, background, command
+    ind = 0
+    for it in enemy:
+        it.move = 'idle'
     for it in player:
         mult = False
-        try:
-            command[ind][1] = int(command[ind][1])
-        except:
-            mult = True
-        skill = it.skills[i]
+        try: command[ind][1] = int(command[ind][1])
+        except: mult = True
+
+        for i in range(len(it.skills)):
+            if(command[ind][0] == it.skills[i].name): skill = it.skills[i]
+        
         if(skill.attribute > 0): it.move = 'atk'
         else: it.move = 'assist'
                         
@@ -128,22 +124,13 @@ def battle():
                         
             if(critical):
                 aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2) * 2)
-                line_bot_api.reply_message(
-                    replyToken,
-                    TextSendMessage(text = 'Critical atk! '+ it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
-                )
+                print('Critical atk on ' + aim.name + ' hp: ' + str(aim.Hp))
             elif(hit):    #atk hitted
                 aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2))
-                line_bot_api.reply_message(
-                    replyToken,
-                    TextSendMessage(text = it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
-                )
+                print('atk on ' + aim.name + ' hp: ' + str(aim.Hp))
             else:       #atk miss
                 aim.move = 'miss'
-                line_bot_api.reply_message(
-                    replyToken,
-                    TextSendMessage(text = aim.name + 'avoid attack')
-                )
+                print('miss!')
         elif(mult and skill.num > 1):
             timer = 0
             for i in range(len(enemy)):
@@ -160,26 +147,19 @@ def battle():
 
                 if(critical):
                     aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2) * 2)
-                    line_bot_api.reply_message(
-                        replyToken,
-                        TextSendMessage(text = 'Critical atk! '+ it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
-                    )
+                    print('Critical atk on ' + aim.name + ' hp: ' + str(aim.Hp))
                 elif(hit):    #atk hitted
                     aim.Hp -= int (float(it.damage) * float(skill.power) * random.uniform(0.8, 1.2))
-                    line_bot_api.reply_message(
-                        replyToken,
-                        TextSendMessage(text = it.ID + ' use ' + skill.name + ' ,' + aim.name + ' remain: ' + str(aim.Hp))
-                    )
+                    print('atk on ' + aim.name + ' hp: ' + str(aim.Hp))
                 else:       #atk miss
                     aim.move = 'miss'
-                    line_bot_api.reply_message(
-                        replyToken,
-                        TextSendMessage(text = aim.name + 'avoid attack')
-                    )
-        ind += 1
-    
+                    print('miss!')
+    ind += 1
+    background  = Image.open(var['scene'][env] + '/' + scene_name)
+    generate(background)
     upload()
-    
+def battleEnemyTurn():
+    global player, enemy, background
     for it in player:
         it.move = 'idle'
     for i in range(len(enemy)):
@@ -204,31 +184,21 @@ def battle():
             
         if(critical):
             aim.Hp -= int (float(enemy[i].damage) * random.uniform(0.8, 1.2) * 2)
-            #print('Critical atk! '+ aim.ID + ' remain: ' + str(aim.Hp))
-            line_bot_api.reply_message(
-                replyToken,
-                TextSendMessage(text = 'Critical atk! '+ aim.ID + ' remain: ' + str(aim.Hp))
-            )
+            print('Critical atk! '+ aim.ID + ' remain: ' + str(aim.Hp))
         elif(hit):
             aim.Hp -= int (float(enemy[i].damage) * random.uniform(0.8, 1.2))
-            #print(aim.ID + ' remain: ' + str(aim.Hp))
-            line_bot_api.reply_message(
-                replyToken,
-                TextSendMessage(text = aim.ID + ' remain: ' + str(aim.Hp))
-            )
+            print(aim.ID + ' remain: ' + str(aim.Hp))
         else:
             aim.move = 'miss'
-            line_bot_api.reply_message(
-                replyToken,
-                TextSendMessage(text = aim.name + 'avoid attack')
-            )
-    
+            print('miss!')
+    background  = Image.open(var['scene'][env] + '/' + scene_name)
+    generate(background)
     upload()
 
 #recieve and transfer
 @app.route("/callback", methods=["POST"])
 def callback():
-    global player, team, profession, state, background, var, ready
+    global team, player, enemy, background, scene_name, replyToken, state, env, Round
     signature = request.headers["X-Line-Signature"]
     # get request body as text
     body = request.get_data(as_text=True)
@@ -242,7 +212,6 @@ def callback():
 
     # if event is MessageEvent and message is TextMessage, then echo text
     for event in events:
-        global replyToken
         replyToken = event.reply_token
         if not isinstance(event, MessageEvent):
             continue
@@ -258,7 +227,7 @@ def callback():
             if (words[0] == '清除' or words[0] == 'clear'):
                 team    = []
                 player  = []
-                background  = Image.open(var['scene']['crypts'] + '/' + random.choice(os.listdir(var['scene']['crypts'])))
+                background  = Image.open(var['scene'][env] + '/' + scene_name)
                 line_bot_api.reply_message(
                     event.reply_token,
                     TextSendMessage(text = '隊伍清除')
@@ -282,7 +251,7 @@ def callback():
                     TextSendMessage(text = '創建職業 : ' + profession[int(words[1])])
                 )
             elif(words[0] == 'check'):
-                generate()
+                generate(background)
                 background.save('./img/bg.png')
 
                 im      = pyimgur.Imgur(imgur_id)
@@ -293,17 +262,32 @@ def callback():
                     event.reply_token,
                     ImageSendMessage(original_content_url = url, preview_image_url = url)
                 )
-            elif(words[0] == '環境選擇' and words[1]):
-                state = 1
+            elif(words[0] == '環境' and words[1]):
+                enemy = []
                 env   = words[1]
+                scene_name  = random.choice(os.listdir(var['scene'][env]))
+                background  = Image.open(var['scene'][env] + '/' + scene_name)
                 line_bot_api.reply_message(
                     event.reply_token,
                     TextSendMessage(text = '環境已選擇 '+ env)
                 )
             elif(words[0] == 'start'):
                 state = 1
+                background  = Image.open(var['scene'][env] + '/' + scene_name)
                 createRaid()
+                generate(background)
+                background.save('./img/bg.png')
+
+                im      = pyimgur.Imgur(imgur_id)
+                upload  = im.upload_image('./img/bg.png', title = "img") 
+                url     = upload.link
+                
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    ImageSendMessage(original_content_url = url, preview_image_url = url)
+                )
         else:
+            ready = 0
             ind = 0
             for i in range(len(player)):
                 if(player[i].ID == id): ind = i
@@ -313,7 +297,11 @@ def callback():
                     ready += 1
                     break
             if(ready == len(team)):
-                battle()
+                Round = 1
+                battlePlayerTurn()
+            elif(Round == 1):
+                Round = 0
+                battleEnemyTurn()
     return "OK"
 
 @app.route("/webhook", methods=["POST"])
